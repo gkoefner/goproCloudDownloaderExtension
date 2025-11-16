@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 350px;
+      padding: 15px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+    }
+    h3 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+    }
+    button {
+      padding: 8px 16px;
+      background: #0066cc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      width: 100%;
+      margin: 5px 0;
+    }
+    button:hover {
+      background: #0052a3;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 10px;
+      padding: 10px;
+      background: #f5f5f5;
+      border-radius: 4px;
+      min-height: 60px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 12px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      line-height: 1.4;
+      display: none;
+    }
+    #status.visible {
+      display: block;
+    }
+    .folder-path {
+      margin: 10px 0;
+      padding: 8px;
+      background: #e8f4f8;
+      border-radius: 4px;
+      font-size: 11px;
+      word-break: break-all;
+    }
+    .warning {
+      background: #fff3cd;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <h3>GoPro Cloud Downloader</h3>
+  
+  <div class="warning">
+    ⚠️ Make sure you're logged into gopro.com first!
+  </div>
+  
+  <button id="selectFolder">1. Select Download Folder</button>
+  <div id="folderPath" class="folder-path" style="display: none;"></div>
+  
+  <button id="startDownload" disabled>2. Start Download</button>
+  <button id="stopDownload" disabled style="background: #dc3545;">Stop Download</button>
+  
+  <div id="status"></div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
