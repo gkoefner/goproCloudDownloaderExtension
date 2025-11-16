@@ -2,6 +2,7 @@ let isDownloading = false;
 let downloadQueue = [];
 let currentIndex = 0;
 let downloadFolder = '';
+let downloadSummary = {}; // Track all successfully downloaded files
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'startDownload') {
@@ -12,6 +13,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     downloadQueue = [];
     currentIndex = 0;
     chrome.storage.local.set({ isDownloading: false });
+  } else if (message.action === 'exportSummary') {
+    exportDownloadSummary();
   }
 });
 
@@ -22,6 +25,9 @@ async function startDownload() {
   
   // Save download state
   await chrome.storage.local.set({ isDownloading: true });
+  
+  // Load existing download summary
+  await loadDownloadSummary();
   
   try {
     // Fetch all pages of media
@@ -125,35 +131,73 @@ async function downloadNext() {
     if (downloadInfo && downloadInfo.url) {
       console.log(`[DEBUG] Got download URL for ${clip.filename}`);
       
-      // Check if file already exists by searching download history
+      // Check if file already downloaded using summary (much faster than searching)
+      if (downloadSummary[clip.id]) {
+        const summaryEntry = downloadSummary[clip.id];
+        const expectedSize = clip.file_size;
+        
+        // Verify size matches
+        if (expectedSize && summaryEntry.file_size && Math.abs(summaryEntry.file_size - expectedSize) < 1024) {
+          console.log(`[DEBUG] File in summary with matching size, skipping: ${clip.filename} (${summaryEntry.file_size} bytes)`);
+          sendStatus(`[${currentIndex + 1}/${downloadQueue.length}] ⏭️ Skipping ${clip.filename} (already downloaded, ${(summaryEntry.file_size / (1024 * 1024)).toFixed(1)} MB)`);
+          currentIndex++;
+          setTimeout(downloadNext, 500);
+          return;
+        } else if (summaryEntry.file_size) {
+          console.log(`[DEBUG] File in summary but size mismatch - Expected: ${expectedSize}, Found: ${summaryEntry.file_size}, re-downloading: ${clip.filename}`);
+          sendStatus(`[${currentIndex + 1}/${downloadQueue.length}] ⚠️ Re-downloading ${clip.filename} (size mismatch)`);
+        }
+      }
+      
+      // Also check filesystem in case user moved files but kept summary
+      // This searches Chrome's download history for files that still exist on disk
+      const escapedFolder = downloadFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedFilename = clip.filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const existingDownloads = await chrome.downloads.search({
-        filenameRegex: `${downloadFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${clip.filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+        filenameRegex: `${escapedFolder}[/\\\\]${escapedFilename}$`,
         exists: true
       });
       
-      // Verify file exists with matching size
+      console.log(`[DEBUG] Filesystem check for ${clip.filename}: found ${existingDownloads ? existingDownloads.length : 0} matches`);
+      
       if (existingDownloads && existingDownloads.length > 0) {
         const existingFile = existingDownloads[0];
         const expectedSize = clip.file_size;
         
-        // Check if file size matches (within 1KB tolerance for metadata differences)
+        console.log(`[DEBUG] Found existing file: ${existingFile.filename}, size: ${existingFile.fileSize}, expected: ${expectedSize}`);
+        
+        // File exists on disk, add to summary if not already there and skip
         if (expectedSize && existingFile.fileSize && Math.abs(existingFile.fileSize - expectedSize) < 1024) {
-          console.log(`[DEBUG] File already exists with matching size, skipping: ${clip.filename} (${existingFile.fileSize} bytes)`);
-          sendStatus(`[${currentIndex + 1}/${downloadQueue.length}] ⏭️ Skipping ${clip.filename} (already exists, ${(existingFile.fileSize / (1024 * 1024)).toFixed(1)} MB)`);
+          console.log(`[DEBUG] File exists on disk with matching size, adding to summary and skipping: ${clip.filename}`);
+          
+          // Add to summary for future fast checks
+          downloadSummary[clip.id] = {
+            filename: clip.filename,
+            file_size: existingFile.fileSize,
+            downloaded_at: new Date().toISOString(),
+            folder: downloadFolder,
+            id: clip.id,
+            type: clip.type,
+            captured_at: clip.captured_at
+          };
+          await saveDownloadSummary();
+          
+          sendStatus(`[${currentIndex + 1}/${downloadQueue.length}] ⏭️ Skipping ${clip.filename} (file exists, ${(existingFile.fileSize / (1024 * 1024)).toFixed(1)} MB)`);
           currentIndex++;
           setTimeout(downloadNext, 500);
           return;
-        } else if (existingFile.fileSize) {
-          console.log(`[DEBUG] File exists but size mismatch - Expected: ${expectedSize}, Found: ${existingFile.fileSize}, re-downloading: ${clip.filename}`);
-          sendStatus(`[${currentIndex + 1}/${downloadQueue.length}] ⚠️ Re-downloading ${clip.filename} (size mismatch)`);
+        } else {
+          console.log(`[DEBUG] File exists but size mismatch or missing - Expected: ${expectedSize}, Found: ${existingFile.fileSize}`);
         }
+      } else {
+        console.log(`[DEBUG] No existing file found in download history for ${clip.filename}`);
       }
       
       // Start tracking download for progress
       const downloadId = await chrome.downloads.download({
         url: downloadInfo.url,
         filename: `${downloadFolder}/${clip.filename}`,
-        conflictAction: 'uniquify'
+        conflictAction: 'overwrite'
       });
       
       console.log(`[DEBUG] Download started with ID: ${downloadId}`);
@@ -211,7 +255,21 @@ async function downloadNext() {
         setTimeout(checkProgress, 500);
       });
       
-      // Download completed, now save metadata JSON
+      // Download completed, add to summary
+      downloadSummary[clip.id] = {
+        filename: clip.filename,
+        file_size: clip.file_size,
+        downloaded_at: new Date().toISOString(),
+        folder: downloadFolder,
+        id: clip.id,
+        type: clip.type,
+        captured_at: clip.captured_at
+      };
+      
+      // Save updated summary
+      await saveDownloadSummary();
+      
+      // Also save metadata JSON
       const jsonContent = JSON.stringify(clip, null, 2);
       const jsonDataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonContent);
       
@@ -259,4 +317,57 @@ function sendComplete(text) {
 
 function sendError(text) {
   chrome.runtime.sendMessage({ type: 'error', text });
+}
+
+// Download summary management functions
+async function loadDownloadSummary() {
+  try {
+    const result = await chrome.storage.local.get(['downloadSummary']);
+    if (result.downloadSummary) {
+      downloadSummary = result.downloadSummary;
+      const count = Object.keys(downloadSummary).length;
+      console.log(`[DEBUG] Loaded download summary with ${count} entries`);
+      sendStatus(`📋 Loaded ${count} previously downloaded files from summary`);
+    } else {
+      downloadSummary = {};
+      console.log('[DEBUG] No existing download summary found');
+    }
+  } catch (error) {
+    console.error('[DEBUG] Error loading download summary:', error);
+    downloadSummary = {};
+  }
+}
+
+async function saveDownloadSummary() {
+  try {
+    await chrome.storage.local.set({ downloadSummary: downloadSummary });
+    console.log(`[DEBUG] Saved download summary with ${Object.keys(downloadSummary).length} entries`);
+  } catch (error) {
+    console.error('[DEBUG] Error saving download summary:', error);
+  }
+}
+
+// Export download summary as downloadable JSON file
+async function exportDownloadSummary() {
+  try {
+    const summaryData = {
+      exported_at: new Date().toISOString(),
+      total_files: Object.keys(downloadSummary).length,
+      files: downloadSummary
+    };
+    
+    const jsonContent = JSON.stringify(summaryData, null, 2);
+    const jsonDataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonContent);
+    
+    await chrome.downloads.download({
+      url: jsonDataUrl,
+      filename: `gopro_download_summary_${new Date().toISOString().split('T')[0]}.json`,
+      saveAs: true
+    });
+    
+    sendStatus(`✓ Exported summary with ${summaryData.total_files} files`);
+  } catch (error) {
+    console.error('[DEBUG] Error exporting summary:', error);
+    sendError('Failed to export summary: ' + error.message);
+  }
 }

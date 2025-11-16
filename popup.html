@@ -78,6 +78,13 @@
   <button id="startDownload" disabled>2. Start Download</button>
   <button id="stopDownload" disabled style="background: #dc3545;">Stop Download</button>
   
+  <hr style="margin: 15px 0; border: none; border-top: 1px solid #ddd;">
+  
+  <input type="file" id="importFile" accept=".json" style="display: none;">
+  <button id="importSummary" style="background: #17a2b8;">📤 Import Download Summary</button>
+  <button id="exportSummary" style="background: #28a745;">📥 Export Download Summary</button>
+  <button id="clearSummary" style="background: #ffc107; color: #000;">🗑️ Clear Download History</button>
+  
   <div id="status"></div>
   
   <script src="popup.js"></script>

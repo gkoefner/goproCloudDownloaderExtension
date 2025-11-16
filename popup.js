@@ -4,11 +4,15 @@ let downloadFolder = '';
 const selectFolderBtn = document.getElementById('selectFolder');
 const startDownloadBtn = document.getElementById('startDownload');
 const stopDownloadBtn = document.getElementById('stopDownload');
+const importSummaryBtn = document.getElementById('importSummary');
+const importFileInput = document.getElementById('importFile');
+const exportSummaryBtn = document.getElementById('exportSummary');
+const clearSummaryBtn = document.getElementById('clearSummary');
 const statusDiv = document.getElementById('status');
 const folderPathDiv = document.getElementById('folderPath');
 
 // Load saved folder name and check download status
-chrome.storage.local.get(['downloadFolder', 'isDownloading', 'lastStatus'], (result) => {
+chrome.storage.local.get(['downloadFolder', 'isDownloading', 'lastStatus', 'downloadSummary'], (result) => {
   if (result.downloadFolder) {
     downloadFolder = result.downloadFolder;
     folderPathDiv.textContent = `📁 Downloads/${downloadFolder}`;
@@ -24,6 +28,16 @@ chrome.storage.local.get(['downloadFolder', 'isDownloading', 'lastStatus'], (res
     stopDownloadBtn.disabled = false;
     if (result.lastStatus) {
       updateStatus(result.lastStatus);
+    }
+  }
+  
+  // Show summary statistics
+  if (result.downloadSummary) {
+    const count = Object.keys(result.downloadSummary).length;
+    if (count > 0) {
+      const totalSize = Object.values(result.downloadSummary).reduce((sum, file) => sum + (file.file_size || 0), 0);
+      const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(1);
+      exportSummaryBtn.textContent = `📥 Export Summary (${count} files, ${totalSizeMB} MB)`;
     }
   }
 });
@@ -72,6 +86,87 @@ stopDownloadBtn.addEventListener('click', () => {
   startDownloadBtn.disabled = false;
   stopDownloadBtn.disabled = true;
   updateStatus('⏹️ Download stopped by user');
+});
+
+importSummaryBtn.addEventListener('click', () => {
+  importFileInput.click();
+});
+
+importFileInput.addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    // Validate the format
+    if (!data.files || typeof data.files !== 'object') {
+      updateStatus('❌ Invalid summary file format');
+      return;
+    }
+    
+    // Merge with existing summary
+    const result = await chrome.storage.local.get(['downloadSummary']);
+    const existingSummary = result.downloadSummary || {};
+    const importedFiles = data.files;
+    
+    // Count new vs existing
+    let newCount = 0;
+    let updatedCount = 0;
+    
+    for (const [id, fileInfo] of Object.entries(importedFiles)) {
+      if (existingSummary[id]) {
+        updatedCount++;
+      } else {
+        newCount++;
+      }
+      existingSummary[id] = fileInfo;
+    }
+    
+    // Save merged summary
+    await chrome.storage.local.set({ downloadSummary: existingSummary });
+    
+    const totalCount = Object.keys(existingSummary).length;
+    updateStatus(`✓ Imported ${newCount} new files, updated ${updatedCount}\nTotal in summary: ${totalCount} files`);
+    
+    // Update button text
+    const totalSize = Object.values(existingSummary).reduce((sum, file) => sum + (file.file_size || 0), 0);
+    const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(1);
+    exportSummaryBtn.textContent = `📥 Export Summary (${totalCount} files, ${totalSizeMB} MB)`;
+    
+  } catch (error) {
+    updateStatus('❌ Error importing: ' + error.message);
+  }
+  
+  // Reset file input
+  event.target.value = '';
+});
+
+exportSummaryBtn.addEventListener('click', async () => {
+  try {
+    const result = await chrome.storage.local.get(['downloadSummary']);
+    if (result.downloadSummary && Object.keys(result.downloadSummary).length > 0) {
+      chrome.runtime.sendMessage({ action: 'exportSummary' });
+      updateStatus('📥 Exporting download summary...');
+    } else {
+      updateStatus('ℹ️ No download history to export yet');
+    }
+  } catch (error) {
+    updateStatus('❌ Error: ' + error.message);
+  }
+});
+
+clearSummaryBtn.addEventListener('click', async () => {
+  const confirmed = confirm('Are you sure you want to clear the download history?\n\nThis will remove the record of all downloaded files, and they may be downloaded again on the next run.\n\nConsider exporting the summary first!');
+  if (confirmed) {
+    try {
+      await chrome.storage.local.set({ downloadSummary: {} });
+      updateStatus('✓ Download history cleared');
+    } catch (error) {
+      updateStatus('❌ Error: ' + error.message);
+    }
+  }
 });
 
 // Listen for status updates from background script

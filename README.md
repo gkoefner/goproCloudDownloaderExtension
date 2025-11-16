@@ -67,6 +67,21 @@ This means you can:
 - Re-run on the same folder without re-downloading everything
 - Recover from interrupted downloads automatically
 
+### Download Summary Tracking
+
+The extension now maintains a persistent JSON summary of all successfully downloaded files:
+- **Fast skipping**: Instantly checks if a file was previously downloaded without searching the filesystem
+- **Transfer assistance**: Export the summary when moving files to a new folder or computer
+- **Statistics**: View total downloaded files count and size in the popup
+- **Export/Import**: Save your download history as a portable JSON file
+- **Clear history**: Reset tracking if needed (with confirmation to prevent accidents)
+
+Benefits:
+- Much faster skip checking than filesystem searches
+- Portable download history for backing up or transferring to another system
+- Tracks metadata: filename, size, download date, folder, media type, capture date
+- Persists across browser sessions using Chrome's storage API
+
 ## Extension Architecture
 
 ### File Structure
@@ -167,7 +182,8 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 Potential improvements:
 - [ ] Selective download filters (date range, media type, camera model)
 - [ ] Concurrent downloads (configurable, e.g., 3 at a time)
-- [ ] Export/import download history
+- [x] ~~Export/import download history~~ ✅ **Completed** - Added download summary export
+- [ ] Import download history from JSON file
 - [ ] Direct integration with File System Access API (when Chrome supports it in extensions)
 - [ ] Option to skip metadata JSON files
 - [ ] Bandwidth throttling options
