@@ -30,14 +30,14 @@ chrome.storage.local.get(['downloadFolder', 'isDownloading', 'lastStatus'], (res
 
 selectFolderBtn.addEventListener('click', async () => {
   try {
-    const folder = prompt('Enter subfolder name in Downloads (e.g., "GoPro"):', downloadFolder || 'GoPro');
+    const folder = prompt('Enter subfolder name in Downloads (e.g., "GoPro"):\n\nTip: You can change this anytime to switch folders!', downloadFolder || 'GoPro');
     if (folder && folder.trim()) {
       downloadFolder = folder.trim();
       await chrome.storage.local.set({ downloadFolder: downloadFolder });
       folderPathDiv.textContent = `📁 Downloads/${downloadFolder}`;
       folderPathDiv.style.display = 'block';
       startDownloadBtn.disabled = false;
-      updateStatus('✓ Folder configured');
+      updateStatus('✓ Folder configured - will skip files that exist');
     }
   } catch (error) {
     updateStatus('❌ Error: ' + error.message);
